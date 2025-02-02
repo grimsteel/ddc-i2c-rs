@@ -167,23 +167,29 @@ impl<I: i2c::Address + i2c::ReadWrite> DdcCommandRaw for I2cDdc<I> {
 
         let len = (out[1] & 0x7f) as usize;
 
-        if out[1] & 0x80 == 0 {
-            // TODO: the meaning of this bit is unclear?
-            return Err(Error::Ddc(ErrorCode::Invalid("Expected DDC/CI length bit".into())))
-        }
+        // some monitors return malformed data on CapabilitiesRequest
+        // f3 = CapabilitiesRequest
+        let skip_checks = data[0] == 0xf3;
 
         if full_len < len + 2 {
             return Err(Error::Ddc(ErrorCode::InvalidLength))
         }
 
-        let checksum = Self::checksum(
-            iter::once(((ddc::I2C_ADDRESS_DDC_CI as u8) << 1) | 1)
-                .chain(iter::once(ddc::SUB_ADDRESS_DDC_CI))
-                .chain(out[1..2 + len].iter().cloned()),
-        );
-
-        if out[2 + len] != checksum {
-            return Err(Error::Ddc(ErrorCode::InvalidChecksum))
+        if !skip_checks {
+            if out[1] & 0x80 == 0 {
+                // TODO: the meaning of this bit is unclear?
+                return Err(Error::Ddc(ErrorCode::Invalid("Expected DDC/CI length bit".into())))
+            }
+            
+            let checksum = Self::checksum(
+                iter::once(((ddc::I2C_ADDRESS_DDC_CI as u8) << 1) | 1)
+                    .chain(iter::once(ddc::SUB_ADDRESS_DDC_CI))
+                    .chain(out[1..2 + len].iter().cloned()),
+            );
+            
+            if out[2 + len] != checksum {
+                return Err(Error::Ddc(ErrorCode::InvalidChecksum))
+            }
         }
 
         Ok(&mut out[2..2 + len])
